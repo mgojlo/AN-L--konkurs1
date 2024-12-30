@@ -94,7 +94,7 @@ pub fn SplineSoA(comptime options: struct { T: type = f64, dim: usize = 1 }) typ
     return struct {
         ts: []const T,
         hs: []const T,
-        eq_params: []const EqParams,
+        eq_params: []EqParams,
         allocator: std.mem.Allocator,
 
         pub const Self = @This();

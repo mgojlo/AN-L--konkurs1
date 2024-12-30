@@ -14,9 +14,8 @@ const palette = @import("colorscheme.zig").palette;
 const State = struct {
     camera: rl.Camera2D,
     sp: SplineRL,
-    scale: f32,
-    pwo_tex: rl.Texture2D,
-    rtex: rl.RenderTexture2D,
+    chosen_idx: ?usize = null,
+    thick: f32,
 };
 
 pub fn main() anyerror!void {
@@ -57,12 +56,8 @@ pub fn main() anyerror!void {
             .rotation = 0,
         },
         .sp = try loadSave(allocator),
-        .scale = 1.0,
-        .pwo_tex = pwo_tex,
-        .rtex = undefined,
+        .thick = 5.0,
     };
-    state.rtex =
-        rl.loadRenderTexture(@intFromFloat(@as(f32, @floatFromInt(pwo_tex.width)) / state.scale), @intFromFloat(@as(f32, @floatFromInt(pwo_tex.height)) / state.scale));
 
     while (!rl.windowShouldClose()) {
         try handleInput(&state);
@@ -72,30 +67,12 @@ pub fn main() anyerror!void {
         rl.clearBackground(rl.Color.yellow);
 
         {
-            // rl.beginTextureMode(state.rtex);
-            //
-            // rl.clearBackground(rl.Color.blank);
-            // state.sp.drawSpline2D(1, 1 / state.scale);
-            // rl.drawLine(0, 0, state.rtex.texture.width, state.rtex.texture.height, rl.Color.blue);
-            //
-            // rl.endTextureMode();
-        }
-        {
             rl.beginMode2D(state.camera);
             defer rl.endMode2D();
 
             rl.drawTexture(pwo_tex, 0, -pwo_tex.height, rl.Color.white);
 
-            // const tex = state.rtex.texture;
-            // rl.drawTexturePro(tex, .{ .x = 0, .y = 0, .width = @floatFromInt(tex.width), .height = @floatFromInt(tex.height) }, .{
-            //     .x = 0,
-            //     .y = @floatFromInt(-pwo_tex.height),
-            //     .width = @floatFromInt(pwo_tex.width),
-            //     .height = @floatFromInt(pwo_tex.height),
-            // }, rl.Vector2.zero(), 0, rl.Color.white);
-
-            state.sp.drawSpline2D(state.scale, 1);
-            rl.drawLine(0, 0, state.rtex.texture.width, state.rtex.texture.height, rl.Color.blue);
+            state.sp.drawSpline2D(state.thick, 1);
             state.sp.drawSpline2Dpts(1, 1);
         }
         {
@@ -116,7 +93,7 @@ pub fn main() anyerror!void {
             rl.drawText(text, 0, sh - 30, 0, rl.Color.black);
         }
         {
-            const text = try std.fmt.allocPrintZ(allocator, "S: {d:.2}", .{state.scale});
+            const text = try std.fmt.allocPrintZ(allocator, "THICK: {d:.2}", .{state.thick});
             defer allocator.free(text);
             rl.drawText(text, 0, sh - 40, 0, rl.Color.black);
         }
@@ -231,11 +208,6 @@ pub fn exportSplinePwoCompatW(sp: SplineRL, writer: std.io.AnyWriter) !void {
     }
 }
 
-fn reallocDrawingTex(state: *State) void {
-    rl.unloadRenderTexture(state.rtex);
-    state.rtex = rl.loadRenderTexture(@intFromFloat(@as(f32, @floatFromInt(state.pwo_tex.width)) / state.scale), @intFromFloat(@as(f32, @floatFromInt(state.pwo_tex.height)) / state.scale));
-}
-
 fn handleInput(state: *State) !void {
     switch (rl.getKeyPressed()) {
         .key_l => {
@@ -258,23 +230,39 @@ fn handleInput(state: *State) !void {
         .key_up => state.camera.target.y -= 10.0 / state.camera.zoom,
         .key_down => state.camera.target.y += 10.0 / state.camera.zoom,
         .key_equal => {
-            state.scale += 0.1;
-            reallocDrawingTex(state);
+            state.thick += 0.1;
         },
         .key_minus => {
-            state.scale -= 0.1;
-            if (state.scale <= 0) {
-                state.scale = 0.1;
+            state.thick -= 0.1;
+            if (state.thick <= 0) {
+                state.thick = 0.1;
             }
-            reallocDrawingTex(state);
         },
         else => {},
     }
 
-    if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-        const mousexy = rl.getMousePosition();
-        const xy = rl.getScreenToWorld2D(mousexy, state.camera);
-        try std.io.getStdOut().writer().print("[{},{}]\n", .{ xy.x, -xy.y });
+    // if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
+    //     const mousexy = rl.getMousePosition();
+    //     const xy = rl.getScreenToWorld2D(mousexy, state.camera);
+    //     try std.io.getStdOut().writer().print("[{},{}]\n", .{ xy.x, -xy.y });
+    // }
+    const mouse = rl.getScreenToWorld2D(rl.getMousePosition(), state.camera);
+    for (state.sp.spline.eq_params, 0..) |ep, idx| {
+        if (rl.checkCollisionPointCircle(mouse, .{ .x = @floatCast(ep.v[0]), .y = @floatCast(-ep.v[1]) }, 8.0)) {
+            if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
+                state.chosen_idx = idx;
+            }
+
+            break;
+        }
+    }
+
+    if (state.chosen_idx) |idx| {
+        state.sp.spline.eq_params[idx].v[0] = mouse.x;
+        state.sp.spline.eq_params[idx].v[1] = -mouse.y;
+        if (rl.isMouseButtonReleased(rl.MouseButton.mouse_button_left)) {
+            state.chosen_idx = null;
+        }
     }
 
     const wheel = rl.getMouseWheelMove();
@@ -457,75 +445,3 @@ fn imgDiff(a: rl.Image, b: rl.Image) Diff {
 pub fn remap(value: anytype, inputStart: @TypeOf(value), inputEnd: @TypeOf(value), outputStart: @TypeOf(value), outputEnd: @TypeOf(value)) @TypeOf(value) {
     return (value - inputStart) / (inputEnd - inputStart) * (outputEnd - outputStart) + outputStart;
 }
-
-// for (0..sp.ts.len) |i| {
-//     const t = sp.ts[i];
-//     const pt = try sp.at(t);
-//     const pV: rl.Vector2 = .{
-//         .x = @floatCast(pt[0]),
-//         .y = @floatCast(pt[1]),
-//     };
-//     const mV: rl.Vector2 = .{
-//         .x = @floatCast(sp.eq_params[i].m[0]),
-//         .y = @floatCast(sp.eq_params[i].m[1]),
-//     };
-//     const nV = if (mV.equals(rl.Vector2.zero()) == 1) mV else pV.add(mV).normalize();
-//     if (!printed) {
-//         std.debug.print("{}:\n\tmV: {}\n\tnV: {}\n\teq: {}\n", .{ i, mV, nV, mV.equals(rl.Vector2.zero()) });
-//     }
-//
-//     rl.drawCircleV(pV, 0.6 / camera.zoom, palette.fg_colors[2]);
-//     rl.drawLineEx(pV, pV.add(nV), 0.1, palette.fg_colors[3]);
-// }
-// {
-//     const min_ts = sp.ts[0];
-//     const max_ts = sp.ts[sp.ts.len - 1];
-//     var prev_pt = try sp.at(min_ts);
-//     for (1..mx) |i| {
-//         const i_f: f64 = @floatFromInt(i);
-//         const t_ = i_f / @as(f64, @floatFromInt(mx - 1));
-//         const t = remap(t_, 0.0, 1.0, min_ts, max_ts);
-//
-//         const pt = try sp.at(t);
-//
-//         const prlV: rl.Vector2 = .{
-//             .x = @floatCast(prev_pt[0]),
-//             .y = @floatCast(prev_pt[1]),
-//         };
-//         const rlV: rl.Vector2 = .{
-//             .x = @floatCast(pt[0]),
-//             .y = @floatCast(pt[1]),
-//         };
-//         rl.drawLineV(prlV, rlV, rl.Color.white);
-//
-//         prev_pt = pt;
-//     }
-// }
-// {
-//     const min_ts = sp.ts[0];
-//     const max_ts = sp.ts[sp.ts.len - 1];
-//     var prev_pt = try sp.at(min_ts);
-//     for (1..mx) |i| {
-//         const i_f: f64 = @floatFromInt(i);
-//         const t_ = i_f / @as(f64, @floatFromInt(mx - 1));
-//         const t = remap(t_, 0.0, 1.0, min_ts, max_ts);
-//
-//         const pt = try sp.at(t);
-//
-//         const prlV: rl.Vector2 = .{
-//             .x = @floatCast(prev_pt[0]),
-//             .y = @floatCast(prev_pt[1]),
-//         };
-//         const rlV: rl.Vector2 = .{
-//             .x = @floatCast(pt[0]),
-//             .y = @floatCast(pt[1]),
-//         };
-//
-//         const dV = rlV.subtract(prlV).normalize();
-//
-//         // rl.drawCircleV(prlV, if (camera.zoom == 1) 5.0 else 5.0 / camera.zoom, palette.fg_colors[0]);
-//         rl.drawLineV(prlV, prlV.add(dV), palette.fg_colors[1]);
-//
-//         prev_pt = pt;
-//     }
-// }
