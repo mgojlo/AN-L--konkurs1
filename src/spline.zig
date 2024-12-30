@@ -181,16 +181,14 @@ pub fn SplineSoA(comptime options: struct { T: type = f64, dim: usize = 1 }) typ
         }
 
         pub fn init_from_dists(allocator: std.mem.Allocator, dists: []const T, pts: []const Point) !Self {
-            std.debug.assert(dists.len == pts.len - 1);
-            var ts = try allocator.alloc(T, dists.len + 1);
+            std.debug.assert(dists.len == pts.len);
+            var ts = try allocator.alloc(T, dists.len);
             defer allocator.free(ts);
 
-            var dt: T = 0;
+            var dt: T = dists[0];
             for (0..ts.len) |i| {
+                dt += dists[i];
                 ts[i] = dt;
-                if (i < dists.len) {
-                    dt += dists[i];
-                }
             }
 
             return init_from_points(allocator, ts, pts);
@@ -240,60 +238,125 @@ pub fn SplineSoA(comptime options: struct { T: type = f64, dim: usize = 1 }) typ
                     return self.s(k, t);
                 }
             }
+
             return error.ArgumentOutOfRange;
         }
 
-        pub fn jsonStringify(self: Self, opts: std.json.StringifyOptions, out_stream: anytype) @TypeOf(out_stream).Error!void {
-            var jw = std.json.writeStreamMaxDepth(out_stream, opts, 8);
+        pub fn jsonStringify(self: Self, jw: anytype) !void {
             try jw.beginObject();
-            try jw.objectField("ts");
-            try jw.write(self.ts);
-            try jw.objectField("vs");
-            try jw.beginArray();
-            for (0..self.eq_params.len) |i| {
-                try jw.write(self.eq_params[i].v);
+            {
+                try jw.objectField("dts");
+                try jw.beginArray();
+                var prev_t: T = 0;
+                for (self.ts) |t| {
+                    try jw.write(t - prev_t);
+                    prev_t = t;
+                }
+                try jw.endArray();
             }
-            try jw.endArray();
+
+            {
+                try jw.objectField("vs");
+                try jw.beginArray();
+                for (0..self.eq_params.len) |i| {
+                    try jw.write(self.eq_params[i].v);
+                }
+                try jw.endArray();
+            }
+
             try jw.endObject();
         }
 
-        const SpJs = struct {
-            ts: []const T,
-            vs: []const [dim]T,
-        };
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, opts: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!Self {
+            if (.object_begin != try source.next()) {
+                return error.UnexpectedToken;
+            }
 
-        pub fn jsonParse(allocator: std.mem.Allocator, scanner_or_reader: anytype, opts: std.json.ParseOptions) std.json.ParseError(@TypeOf(scanner_or_reader.*))!Self {
-            var arena = std.heap.ArenaAllocator.init(allocator);
-            defer arena.deinit();
+            var res: struct {
+                dts: ?[]const T = null,
+                vs: ?[]const [dim]T = null,
+            } = .{};
+            while (true) {
+                const token = try source.nextAlloc(allocator, opts.allocate.?);
+                switch (token) {
+                    inline .string, .allocated_string => |k| {
+                        if (std.mem.eql(u8, k, "dts")) {
+                            if (res.dts != null) {
+                                switch (opts.duplicate_field_behavior) {
+                                    .use_first => {
+                                        _ = try std.json.innerParse([]const T, allocator, source, opts);
+                                        continue;
+                                    },
+                                    .@"error" => return error.DuplicateField,
+                                    .use_last => {},
+                                }
+                            }
+                            res.dts = try std.json.innerParse([]const T, allocator, source, opts);
+                        } else if (std.mem.eql(u8, k, "vs")) {
+                            if (res.vs != null) {
+                                switch (opts.duplicate_field_behavior) {
+                                    .use_first => {
+                                        _ = try std.json.innerParse([]const [dim]T, allocator, source, opts);
+                                        continue;
+                                    },
+                                    .@"error" => return error.DuplicateField,
+                                    .use_last => {},
+                                }
+                            }
+                            res.vs = try std.json.innerParse([]const [dim]T, allocator, source, opts);
+                        }
+                    },
+                    .object_end => break,
+                    else => unreachable,
+                }
+            }
 
-            const res = try std.json.parseFromTokenSource(SpJs, arena.allocator(), scanner_or_reader, opts);
+            if (res.dts == null or res.vs == null) {
+                return error.MissingField;
+            }
 
-            const sp = init_from_points(allocator, res.value.ts, res.value.vs);
+            const sp = init_from_dists(allocator, res.dts.?, res.vs.?);
 
             return if (sp) |val|
                 val
             else |err| switch (err) {
-                error.NonEqualArgumentsLengths => error.LengthMismatch,
-                error.ArgumentOutOfRange => error.LengthMismatch,
-                else => @errorCast(sp),
+                error.NonEqualArgumentsLengths, error.ArgumentOutOfRange => error.LengthMismatch,
+                error.OutOfMemory => error.OutOfMemory,
             };
         }
 
-        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, opts: std.json.ParseOptions) !Self {
-            var arena = std.heap.ArenaAllocator.init(allocator);
-            defer arena.deinit();
+        // pub fn jsonParse(allocator: std.mem.Allocator, scanner_or_reader: anytype, opts: std.json.ParseOptions) std.json.ParseError(@TypeOf(scanner_or_reader.*))!Self {
+        //     var arena = std.heap.ArenaAllocator.init(allocator);
+        //     defer arena.deinit();
+        //
+        //     const res = try std.json.parseFromTokenSource(SpJs, arena.allocator(), scanner_or_reader, opts);
+        //
+        //     const sp = init_from_points(allocator, res.value.ts, res.value.vs);
+        //
+        //     return if (sp) |val|
+        //         val
+        //     else |err| switch (err) {
+        //         error.NonEqualArgumentsLengths => error.LengthMismatch,
+        //         error.ArgumentOutOfRange => error.LengthMismatch,
+        //         error.OutOfMemory => error.OutOfMemory,
+        //     };
+        // }
 
-            const res = try std.json.parseFromValue(SpJs, allocator, source, opts);
-
-            const sp = init_from_points(allocator, res.value.ts, res.value.vs);
-
-            return if (sp) |val|
-                val
-            else |err| switch (err) {
-                error.NonEqualArgumentsLengths => error.LengthMismatch,
-                error.ArgumentOutOfRange => error.LengthMismatch,
-                else => @errorCast(sp),
-            };
-        }
+        // pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, opts: std.json.ParseOptions) !Self {
+        //     var arena = std.heap.ArenaAllocator.init(allocator);
+        //     defer arena.deinit();
+        //
+        //     const res = try std.json.parseFromValue(SpJs, allocator, source, opts);
+        //
+        //     const sp = init_from_points(allocator, res.value.ts, res.value.vs);
+        //
+        //     return if (sp) |val|
+        //         val
+        //     else |err| switch (err) {
+        //         error.NonEqualArgumentsLengths => error.LengthMismatch,
+        //         error.ArgumentOutOfRange => error.LengthMismatch,
+        //         else => @errorCast(sp),
+        //     };
+        // }
     };
 }

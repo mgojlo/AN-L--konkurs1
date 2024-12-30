@@ -5,59 +5,33 @@ const rg = @import("raygui");
 
 const Vector = @import("vector.zig");
 const Spline = @import("spline.zig");
-const Spline2D = Spline.SplineSoA(.{ .T = f64, .dim = 2 });
+const SplineRL = @import("spline_rl.zig").SplineRL(f64);
+const Spline2D = SplineRL.Spline;
+// const Spline2D = Spline.SplineSoA(.{ .T = f64, .dim = 2 });
 
 const palette = @import("colorscheme.zig").palette;
 
-pub fn main2() void {
-    const V2 = Vector.Vector(.{ .T = f64, .dim = 2 });
-    const arr = [2]f64{ 1, 1 };
-    const foo: V2 = V2.fromArray(arr);
-    std.debug.print("{}\n", .{foo});
-    std.debug.print("{}\n", .{@Vector(2, f64){ 1, 1 }});
-    std.debug.print("{any}\n", .{&arr});
-    std.debug.print("{any}\n", .{&foo.val});
-}
-
 const State = struct {
     camera: rl.Camera2D,
+    sp: SplineRL,
+    scale: f32,
+    pwo_tex: rl.Texture2D,
+    rtex: rl.RenderTexture2D,
 };
 
 pub fn main() anyerror!void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-
-    // const pts = &[_]Spline2D.Point{
-    //     .{ 0, 0 },
-    //     .{ 10, 10 },
-    //     .{ 20, 0 },
-    //     .{ 30, 10 },
-    //     .{ 40, 0 },
-    // };
-    //
-    // const dists = &[_]Spline2D.T{
-    //     1,
-    //     10,
-    //     10,
-    //     1,
-    // };
-    //
-    // // const sp = try Spline2D.init_from_dists(allocator, dists, pts);
-    // // defer sp.deinit();
-    //
-    // std.debug.print("{}\n", .{@TypeOf(sp)});
-    // std.debug.print("{}\n", .{Spline2D});
-
-    // var mx: usize = 2;
 
     const sw = 640;
     const sh = 480;
 
     rl.setConfigFlags(.{
         .msaa_4x_hint = true,
-        // .vsync_hint = true,
+        .vsync_hint = true,
     });
     rl.initWindow(sw, sh, "Konkurs1");
     defer rl.closeWindow();
@@ -66,140 +40,241 @@ pub fn main() anyerror!void {
     pwo = pwo;
     defer rl.unloadImage(pwo);
 
-    // std.debug.print("{}x{}\n", .{ pwo.width, pwo.height });
-    // rl.imageResize(&pwo, @divTrunc(pwo.width, 2), @divTrunc(pwo.height, 2));
-    // std.debug.print("{}x{}\n", .{ pwo.width, pwo.height });
     const pwo_tex = rl.loadTextureFromImage(pwo);
     defer rl.unloadTexture(pwo_tex);
 
-    var state: State = .{ .camera = .{
-        .zoom = 1,
-        .offset = .{
-            .x = @floatFromInt(@divTrunc(sw, 2)),
-            .y = @floatFromInt(@divTrunc(sh, 2)),
+    var state: State = .{
+        .camera = .{
+            .zoom = 4,
+            .offset = .{
+                .x = @floatFromInt(@divTrunc(sw, 2)),
+                .y = @floatFromInt(@divTrunc(sh, 2)),
+            },
+            .target = .{
+                .x = 1020,
+                .y = -165,
+            },
+            .rotation = 0,
         },
-        .target = .{
-            .x = 0,
-            .y = 0,
-        },
-        .rotation = 0,
-    } };
-
-    const sp = try loadSave(allocator);
-    defer sp.deinit();
+        .sp = try loadSave(allocator),
+        .scale = 1.0,
+        .pwo_tex = pwo_tex,
+        .rtex = undefined,
+    };
+    state.rtex =
+        rl.loadRenderTexture(@intFromFloat(@as(f32, @floatFromInt(pwo_tex.width)) / state.scale), @intFromFloat(@as(f32, @floatFromInt(pwo_tex.height)) / state.scale));
 
     while (!rl.windowShouldClose()) {
         try handleInput(&state);
 
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(rl.Color.white);
+        rl.clearBackground(rl.Color.yellow);
 
+        {
+            // rl.beginTextureMode(state.rtex);
+            //
+            // rl.clearBackground(rl.Color.blank);
+            // state.sp.drawSpline2D(1, 1 / state.scale);
+            // rl.drawLine(0, 0, state.rtex.texture.width, state.rtex.texture.height, rl.Color.blue);
+            //
+            // rl.endTextureMode();
+        }
         {
             rl.beginMode2D(state.camera);
             defer rl.endMode2D();
 
-            try drawSpline2D(sp, &[_]Spline2D.T{ 0, 0.5, 1 }, 1, 1);
-
             rl.drawTexture(pwo_tex, 0, -pwo_tex.height, rl.Color.white);
+
+            // const tex = state.rtex.texture;
+            // rl.drawTexturePro(tex, .{ .x = 0, .y = 0, .width = @floatFromInt(tex.width), .height = @floatFromInt(tex.height) }, .{
+            //     .x = 0,
+            //     .y = @floatFromInt(-pwo_tex.height),
+            //     .width = @floatFromInt(pwo_tex.width),
+            //     .height = @floatFromInt(pwo_tex.height),
+            // }, rl.Vector2.zero(), 0, rl.Color.white);
+
+            state.sp.drawSpline2D(state.scale, 1);
+            rl.drawLine(0, 0, state.rtex.texture.width, state.rtex.texture.height, rl.Color.blue);
+            state.sp.drawSpline2Dpts(1, 1);
         }
         {
             const mousexy = rl.getMousePosition();
             const xy = rl.getScreenToWorld2D(mousexy, state.camera);
-            const text = try std.fmt.allocPrintZ(allocator, "{d:.2},{d:.2}", .{ xy.x, -xy.y });
+            const text = try std.fmt.allocPrintZ(allocator, "M: {d:.2},{d:.2}", .{ xy.x, -xy.y });
             defer allocator.free(text);
-
-            // _ = rg.guiLabel(.{ .x = mousexy.x, .y = mousexy.y - 10, .width = 100, .height = 100 }, text);
             rl.drawText(text, 0, sh - 10, 0, rl.Color.black);
+        }
+        {
+            const text = try std.fmt.allocPrintZ(allocator, "Z: {d:.4}", .{state.camera.zoom});
+            defer allocator.free(text);
+            rl.drawText(text, 0, sh - 20, 0, rl.Color.black);
+        }
+        {
+            const text = try std.fmt.allocPrintZ(allocator, "C: {d:.2},{d:.2}", .{ state.camera.target.x, -state.camera.target.y });
+            defer allocator.free(text);
+            rl.drawText(text, 0, sh - 30, 0, rl.Color.black);
+        }
+        {
+            const text = try std.fmt.allocPrintZ(allocator, "S: {d:.2}", .{state.scale});
+            defer allocator.free(text);
+            rl.drawText(text, 0, sh - 40, 0, rl.Color.black);
         }
         rl.drawFPS(0, 0);
     }
+
+    state.sp.deinit();
 }
 
-pub fn loadSave(allocator: std.mem.Allocator) !Spline2D {
+pub fn saveSave(sp: SplineRL) !void {
+    const file = try std.fs.cwd().createFile("save.json", .{});
+    defer file.close();
+
+    const writer = file.writer();
+    try std.json.stringify(sp, .{ .whitespace = .indent_2 }, writer);
+}
+
+pub fn loadSave(allocator: std.mem.Allocator) !SplineRL {
     const file = try std.fs.cwd().openFile("save.json", .{});
     defer file.close();
 
     const reader = file.reader();
     var json_reader = std.json.reader(allocator, reader);
-    return std.json.parseFromTokenSourceLeaky(Spline2D, allocator, &json_reader, .{});
-    // var scanner = std.json.Scanner.initCompleteInput(allocator,
-    //     \\ {
-    //     \\ "ts": [
-    //     \\ 	0e0,
-    //     \\ 	1e0,
-    //     \\ 	1.1e1,
-    //     \\ 	2.1e1,
-    //     \\ 	2.2e1
-    //     \\ ],
-    //     \\ "vs": [
-    //     \\ 	[
-    //     \\ 		0e0,
-    //     \\ 		0e0
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		1e1,
-    //     \\ 		1e1
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		2e1,
-    //     \\ 		0e0
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		3e1,
-    //     \\ 		1e1
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		4e1,
-    //     \\ 		0e0
-    //     \\ 	]
-    //     \\ ]
-    //     \\ }
-    // );
-    // defer scanner.deinit();
-    //
-    // // const sp = try Spline2D.jsonLoad(allocator, &scanner, .{});
-    // const sp = try std.json.parseFromSliceLeaky(Spline2D, allocator,
-    //     \\ {
-    //     \\ "ts": [
-    //     \\ 	0e0,
-    //     \\ 	1e0,
-    //     \\ 	1.1e1,
-    //     \\ 	2.1e1,
-    //     \\ 	2.2e1
-    //     \\ ],
-    //     \\ "vs": [
-    //     \\ 	[
-    //     \\ 		0e0,
-    //     \\ 		0e0
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		1e1,
-    //     \\ 		1e1
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		2e1,
-    //     \\ 		0e0
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		3e1,
-    //     \\ 		1e1
-    //     \\ 	],
-    //     \\ 	[
-    //     \\ 		4e1,
-    //     \\ 		0e0
-    //     \\ 	]
-    //     \\ ]
-    //     \\ }
-    // , .{});
-    // defer sp.deinit();
+    return std.json.parseFromTokenSourceLeaky(SplineRL, allocator, &json_reader, .{});
+}
+
+pub fn exportSplinesPwoCompat(sp: []const SplineRL) !void {
+    const file = try std.fs.cwd().createFile("save.pwocompat.txt", .{});
+    defer file.close();
+
+    var writer = file.writer();
+
+    var first = true;
+    for (sp) |spline| {
+        if (!first) {
+            writer.print("\n", .{});
+        }
+        try exportSplinePwoCompatW(spline, writer);
+        first = false;
+    }
+}
+
+pub fn exportSplinePwoCompat(sp: SplineRL) !void {
+    const file = try std.fs.cwd().createFile("save.pwocompat.txt", .{});
+    defer file.close();
+
+    const writer = file.writer();
+
+    try exportSplinePwoCompatW(sp, writer.any());
+}
+
+pub fn exportSplinePwoCompatW(sp: SplineRL, writer: std.io.AnyWriter) !void {
+    {
+        try writer.print("[", .{});
+        var first = true;
+        for (sp.spline.ts) |t| {
+            if (!first) {
+                try writer.print(",", .{});
+            }
+
+            try writer.print("{d}", .{t});
+
+            first = false;
+        }
+        try writer.print("]\n", .{});
+    }
+    {
+        try writer.print("[", .{});
+        var first = true;
+        for (sp.spline.eq_params) |ep| {
+            const x = ep.v[0];
+
+            if (!first) {
+                try writer.print(",", .{});
+            }
+
+            try writer.print("{d}", .{x});
+
+            first = false;
+        }
+        try writer.print("]\n", .{});
+    }
+    {
+        try writer.print("[", .{});
+        var first = true;
+        for (sp.spline.eq_params) |ep| {
+            const y = ep.v[1];
+
+            if (!first) {
+                try writer.print(",", .{});
+            }
+
+            try writer.print("{d}", .{y});
+
+            first = false;
+        }
+        try writer.print("]\n", .{});
+    }
+    {
+        try writer.print("[", .{});
+        var first = true;
+        for (sp.us) |u| {
+            if (!first) {
+                try writer.print(",", .{});
+            }
+
+            try writer.print("{d}", .{u});
+
+            first = false;
+        }
+        try writer.print("]\n", .{});
+    }
+}
+
+fn reallocDrawingTex(state: *State) void {
+    rl.unloadRenderTexture(state.rtex);
+    state.rtex = rl.loadRenderTexture(@intFromFloat(@as(f32, @floatFromInt(state.pwo_tex.width)) / state.scale), @intFromFloat(@as(f32, @floatFromInt(state.pwo_tex.height)) / state.scale));
 }
 
 fn handleInput(state: *State) !void {
+    switch (rl.getKeyPressed()) {
+        .key_l => {
+            const allocator = state.sp.allocator;
+            const new_sp = loadSave(allocator);
+
+            if (new_sp) |val| {
+                state.sp.deinit();
+                state.sp = val;
+            } else |err| {
+                std.log.scoped(.handleInput).warn("Failed loading save: {}", .{err});
+            }
+        },
+        .key_s => try saveSave(state.sp),
+        .key_e => try exportSplinePwoCompat(state.sp),
+        .key_c => state.camera.target = .{ .x = 0, .y = 0 },
+        .key_r => state.camera.zoom = 1,
+        .key_right => state.camera.target.x += 10.0 / state.camera.zoom,
+        .key_left => state.camera.target.x -= 10.0 / state.camera.zoom,
+        .key_up => state.camera.target.y -= 10.0 / state.camera.zoom,
+        .key_down => state.camera.target.y += 10.0 / state.camera.zoom,
+        .key_equal => {
+            state.scale += 0.1;
+            reallocDrawingTex(state);
+        },
+        .key_minus => {
+            state.scale -= 0.1;
+            if (state.scale <= 0) {
+                state.scale = 0.1;
+            }
+            reallocDrawingTex(state);
+        },
+        else => {},
+    }
+
     if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
         const mousexy = rl.getMousePosition();
         const xy = rl.getScreenToWorld2D(mousexy, state.camera);
-        try std.io.getStdOut().writer().print("[{},{}]\n", .{ xy.x, xy.y });
+        try std.io.getStdOut().writer().print("[{},{}]\n", .{ xy.x, -xy.y });
     }
 
     const wheel = rl.getMouseWheelMove();
@@ -222,74 +297,6 @@ fn handleInput(state: *State) !void {
     if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_middle) or rl.isKeyDown(rl.KeyboardKey.key_space)) {
         const delta = rl.getMouseDelta().scale(-1.0 / state.camera.zoom);
         state.camera.target = state.camera.target.add(delta);
-    }
-
-    if (rl.isKeyDown(rl.KeyboardKey.key_c)) {
-        state.camera.target = .{ .x = 0, .y = 0 };
-    } else if (rl.isKeyDown(rl.KeyboardKey.key_r)) {
-        state.camera.zoom = 1;
-    }
-
-    if (rl.isKeyDown(rl.KeyboardKey.key_right)) {
-        state.camera.target.x += 10.0 / state.camera.zoom;
-    } else if (rl.isKeyDown(rl.KeyboardKey.key_left)) {
-        state.camera.target.x -= 10.0 / state.camera.zoom;
-    } else if (rl.isKeyDown(rl.KeyboardKey.key_up)) {
-        state.camera.target.y -= 10.0 / state.camera.zoom;
-    } else if (rl.isKeyDown(rl.KeyboardKey.key_down)) {
-        state.camera.target.y += 10.0 / state.camera.zoom;
-    }
-    // if (rl.isKeyPressed(rl.KeyboardKey.key_equal)) {
-    //     if (rl.isKeyDown(rl.KeyboardKey.key_left_shift)) {
-    //         mx *= 2;
-    //     } else if (rl.isKeyDown(rl.KeyboardKey.key_left_control)) {
-    //         mx += mx / 10;
-    //     } else {
-    //         mx += 1;
-    //     }
-    // } else if (rl.isKeyPressed(rl.KeyboardKey.key_minus)) {
-    //     if (mx > 2) {
-    //         if (rl.isKeyDown(rl.KeyboardKey.key_left_shift)) {
-    //             mx /= 2;
-    //         } else if (rl.isKeyDown(rl.KeyboardKey.key_left_control)) {
-    //             mx -|= mx / 10;
-    //         } else {
-    //             mx -= 1;
-    //         }
-    //     }
-    //     if (mx < 2) {
-    //         mx = 2;
-    //     }
-    // }
-}
-
-fn drawSpline2Dpts(s: Spline2D, ts: []const f64, thick: f32, scale: f64) !void {
-    for (ts) |t| {
-        const res = try s.at(t);
-        const xy: rl.Vector2 = .{
-            .x = @floatCast(res[0] * scale),
-            .y = @floatCast(-res[1] * scale),
-        };
-        rl.DrawCircleV(xy, thick, rl.Color.blue);
-    }
-}
-
-fn drawSpline2D(s: Spline2D, ts: []const f64, thick: f32, scale: f64) !void {
-    var prev: rl.Vector2 = undefined;
-    var first = true;
-    for (ts) |t| {
-        const res = try s.at(t);
-        const xy: rl.Vector2 = .{
-            .x = @floatCast(res[0] * scale),
-            .y = @floatCast(-res[1] * scale),
-        };
-
-        if (!first) {
-            rl.drawLineEx(prev, xy, thick, rl.Color.green);
-        } else {
-            first = false;
-        }
-        prev = xy;
     }
 }
 
