@@ -69,7 +69,7 @@ pub fn main() !void {
     rl.initWindow(sw, sh, "Konkurs1");
     defer rl.closeWindow();
 
-    var pwo = rl.loadImage("pwo++-cropped.png");
+    var pwo = rl.loadImage("pwo++.png");
     pwo = pwo;
     defer rl.unloadImage(pwo);
 
@@ -180,6 +180,8 @@ fn exportImage(splines: []const Spline, width: usize, height: usize, thick: f32,
     {
         rtex.begin();
         defer rtex.end();
+
+        rl.clearBackground(rl.Color.white);
 
         for (splines) |*sp| {
             sp.drawSpline2D(thick, rl.Color.red, false);
