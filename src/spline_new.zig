@@ -260,6 +260,19 @@ pub fn SplineUI(Tp: type) type {
             return res.value;
         }
 
+        pub fn savePwoCompatSplinesSummary(splines: []const Self, writer: std.io.AnyWriter) !void {
+            const num_curves = splines.len;
+            var num_ts: usize = 0;
+            var num_us: usize = 0;
+            for (splines) |sp| {
+                num_ts += sp.dts.items.len;
+                for (sp.gran_us.items) |gus| {
+                    num_us += gus;
+                }
+            }
+            try writer.print("{}, {}, {}\n", .{ num_curves, num_ts, num_us });
+        }
+
         pub fn savePwoCompatSplines(splines: []const Self, writer: std.io.AnyWriter) !void {
             var first = true;
             for (splines) |sp| {

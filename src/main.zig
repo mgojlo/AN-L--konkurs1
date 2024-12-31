@@ -12,6 +12,12 @@ const Spline = @import("spline_new.zig").SplineUI(f64);
 
 const palette = @import("colorscheme.zig").palette;
 
+const fnames = .{
+    .export_image = "konkurs-I-indeks.jpg",
+    .export_data = "konkurs-I-indeks-dane.txt",
+    .export_summary = "konkurs-I-indeks-podsumowanie.txt",
+};
+
 const State = struct {
     const SelectedPt = ?struct {
         spline: *Spline,
@@ -99,7 +105,7 @@ pub fn main() !void {
         try handleInput(&state);
 
         if (rl.isKeyPressed(rl.KeyboardKey.key_e)) {
-            try exportImage(state.ui_splines.arr, @intCast(pwo_tex.width), @intCast(pwo_tex.height), state.thick, "export.png");
+            try exportImage(state.ui_splines.arr, @intCast(pwo_tex.width), @intCast(pwo_tex.height), state.thick, fnames.export_image);
         }
 
         rl.beginDrawing();
@@ -117,7 +123,7 @@ pub fn main() !void {
                     if (state.dragged != null and state.dragged.?.spline == sp) {
                         break :res rl.Color.red.fade(0.5);
                     } else if (state.chosen != null and state.chosen.?.spline == sp) {
-                        break :res rl.Color.blue.fade(0.5);
+                        break :res rl.Color.orange.fade(0.5);
                     } else {
                         break :res palette.fg_colors[@mod(i, palette.fg_colors.len)];
                     }
@@ -163,8 +169,6 @@ pub fn main() !void {
 
         // rl.drawFPS(0, 0);
     }
-
-    try Spline.savePwoCompatSplines(state.ui_splines.arr, (try std.fs.cwd().createFile("export.txt", .{})).writer().any());
 
     state.ui_splines.allocator.deinit();
 }
@@ -270,13 +274,10 @@ fn handleInput(state: *State) !void {
             const new_sp = loadSave(arena.allocator());
 
             if (new_sp) |val| {
-                std.log.scoped(.handleInput).warn("A", .{});
                 state.chosen = null;
                 state.dragged = null;
                 state.ui_splines.allocator.deinit();
-                std.log.scoped(.handleInput).warn("B", .{});
                 _ = state.ui_splines.allocator.reset(.free_all);
-                std.log.scoped(.handleInput).warn("C", .{});
                 state.ui_splines = .{
                     .arr = val,
                     .allocator = arena,
@@ -288,10 +289,18 @@ fn handleInput(state: *State) !void {
         },
         .key_s => try saveSave(state.ui_splines.arr),
         .key_e => {
-            var f = try std.fs.cwd().createFile("export.txt", .{});
-            defer f.close();
+            {
+                var f = try std.fs.cwd().createFile(fnames.export_data, .{});
+                defer f.close();
 
-            try Spline.savePwoCompatSplines(state.ui_splines.arr, f.writer().any());
+                try Spline.savePwoCompatSplines(state.ui_splines.arr, f.writer().any());
+            }
+            {
+                var f = try std.fs.cwd().createFile(fnames.export_summary, .{});
+                defer f.close();
+
+                try Spline.savePwoCompatSplinesSummary(state.ui_splines.arr, f.writer().any());
+            }
         },
         .key_right => state.camera.target.x += 10.0 / state.camera.zoom,
         .key_left => state.camera.target.x -= 10.0 / state.camera.zoom,
