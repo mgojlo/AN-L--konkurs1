@@ -66,7 +66,7 @@ const simple = &[_]rl.Color{
     rl.Color.dark_purple,
 };
 
-const base = aztec;
+const base = blueforest;
 
 pub const palette = struct {
     pub const colors = base;

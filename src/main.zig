@@ -52,7 +52,6 @@ const State = struct {
 // }
 
 pub fn main() !void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var gpa = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer _ = gpa.deinit();
 
@@ -118,7 +117,17 @@ pub fn main() !void {
 
             rl.drawTexture(pwo_tex, 0, -pwo_tex.height, rl.Color.white);
 
+            const screenRect = res: {
+                const tl = rl.getScreenToWorld2D(.{ .x = 0, .y = 0 }, state.camera);
+                const br = rl.getScreenToWorld2D(.{ .x = sw, .y = sh }, state.camera);
+                break :res rl.Rectangle{ .x = tl.x, .y = tl.y, .width = br.x - tl.x, .height = br.y - tl.y };
+            };
+
             for (state.ui_splines.arr, 0..) |*sp, i| {
+                // Avoid drawing off-screen splines
+                if (!rl.checkCollisionRecs(screenRect, sp.collision_box(state.thick))) {
+                    continue;
+                }
                 const color = res: {
                     if (state.dragged != null and state.dragged.?.spline == sp) {
                         break :res rl.Color.red.fade(0.5);
@@ -129,6 +138,7 @@ pub fn main() !void {
                     }
                 };
                 sp.drawSpline2D(state.thick, color, true);
+                sp.drawSpline2D(1, rl.Color.black, true);
                 if (state.chosen) |chosen| {
                     if (chosen.spline == sp) {
                         sp.drawSpline2Dpts(1, chosen.idx);
@@ -156,18 +166,18 @@ pub fn main() !void {
                     var val: f32 = @floatCast(std.math.log2(chosen.spline.getDt(chosen.idx)));
                     const min: f32 = std.math.log2(1.0 / 512.0);
                     const max: f32 = std.math.log2(8);
-                    _ = rg.guiSlider(.{ .x = 0, .y = 0, .width = 120, .height = 20 }, "", "dt", &val, min, max);
+                    _ = rg.guiSlider(.{ .x = 0, .y = sh - 40, .width = 120, .height = 20 }, "", "dt", &val, min, max);
                     try chosen.spline.setDt(chosen.idx, @max(min, @as(f64, @floatCast(std.math.pow(Spline.T, 2, val)))));
                 }
                 {
                     var val: i32 = @intCast(chosen.spline.getGran(chosen.idx));
-                    _ = rg.guiSpinner(.{ .x = 0, .y = 20, .width = 120, .height = 20 }, "gran", &val, 1, 64, true);
+                    _ = rg.guiSpinner(.{ .x = 0, .y = sh - 60, .width = 120, .height = 20 }, "gran", &val, 1, 64, true);
                     try chosen.spline.setGran(chosen.idx, @max(1, @as(usize, @intCast(val))));
                 }
             }
         }
 
-        // rl.drawFPS(0, 0);
+        rl.drawFPS(0, 0);
     }
 
     state.ui_splines.allocator.deinit();
@@ -241,7 +251,13 @@ fn handleInput(state: *State) !void {
     }
 
     if (state.dragged) |dragged| {
-        try dragged.spline.setPt(dragged.idx, Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })));
+        if (rl.isKeyDown(rl.KeyboardKey.key_m)) {
+            var dd = rl.getMouseDelta();
+            dd.y = -dd.y;
+            try dragged.spline.translate(Spline.Point.fromRlVector2(dd));
+        } else {
+            try dragged.spline.setPt(dragged.idx, Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })));
+        }
         if (rl.isMouseButtonReleased(rl.MouseButton.mouse_button_left)) {
             state.chosen = state.dragged;
             state.dragged = null;

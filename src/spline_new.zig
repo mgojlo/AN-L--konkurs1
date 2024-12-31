@@ -130,7 +130,6 @@ pub fn SplineUI(Tp: type) type {
                         if (text) |val| {
                             defer self.allocator.free(val);
                             rl.drawTextEx(rl.getFontDefault(), val, xy, 1, 1, rl.Color.pink);
-                            // rl.drawText(val, @intFromFloat(xy.x), @intFromFloat(xy.y), 1, rl.Color.red);
                         } else |err| {
                             switch (err) {
                                 else => {
@@ -168,8 +167,6 @@ pub fn SplineUI(Tp: type) type {
 
                         if (!first) {
                             rl.drawLineEx(prev, xy, thick, color);
-                            // rl.drawSplineSegmentLinear(prev, xy, thick, rl.colorAlpha(rl.Color.red, 0.5));
-                            // rl.drawLineV(prev, xy, rl.Color.green);
                         } else {
                             first = false;
                         }
@@ -204,6 +201,15 @@ pub fn SplineUI(Tp: type) type {
             _ = self.dts.orderedRemove(i);
             _ = self.pts.orderedRemove(i);
             _ = self.gran_us.orderedRemove(i);
+
+            try self.recalc();
+        }
+
+        pub fn translate(self: *Self, dd: Point) !void {
+            for (self.pts.items) |*pt| {
+                pt.x += dd.x;
+                pt.y += dd.y;
+            }
 
             try self.recalc();
         }
