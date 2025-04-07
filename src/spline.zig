@@ -200,7 +200,7 @@ pub fn SplineUI(Tp: type) type {
         pub fn addPoint(self: *Self, i: usize, pt: Point) !void {
             try self.dts.insert(i, 1);
             try self.pts.insert(i, pt);
-            try self.gran_us.insert(i, 8);
+            try self.gran_us.insert(i, 1);
 
             try self.recalc();
         }

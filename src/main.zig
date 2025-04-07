@@ -229,12 +229,17 @@ const State = struct {
         };
     }
 
-    pub fn addSpline(self: *@This(), x: f64, y: f64) !void {
+    pub fn addSpline(self: *@This(), p1: Spline.Point, p2: Spline.Point) !void {
         self.ui_splines.arr = try self.ui_splines.allocator.allocator().realloc(self.ui_splines.arr, self.ui_splines.arr.len + 1);
-        self.ui_splines.arr[self.ui_splines.arr.len - 1] = try Spline.init(self.ui_splines.allocator.allocator(), &[_]f64{ 0, 1 }, &[_]Spline.Point{
-            .{ .x = x, .y = y },
-            .{ .x = x, .y = y },
-        }, &[_]usize{ 1, 1 });
+        self.ui_splines.arr[self.ui_splines.arr.len - 1] = try Spline.init(self.ui_splines.allocator.allocator(), &[_]f64{
+            1,
+            1,
+        }, &[_]Spline.Point{
+            p1, p2,
+        }, &[_]usize{
+            1,
+            1,
+        });
     }
 };
 
@@ -310,7 +315,8 @@ fn handleInput(state: *State) !void {
             }
         },
         .key_n => {
-            try state.addSpline(mouse.x, -mouse.y);
+            const mouse_wiggle = rl.getScreenToWorld2D(rl.getMousePosition().add(.{ .x = 1, .y = 1 }), state.camera);
+            try state.addSpline(Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })), Spline.Point.fromRlVector2(mouse_wiggle.multiply(.{ .x = 1, .y = -1 })));
         },
         .key_right => state.camera.target.x += 10.0 / state.camera.zoom,
         .key_left => state.camera.target.x -= 10.0 / state.camera.zoom,
