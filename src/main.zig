@@ -3,12 +3,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 
-const Vector = @import("vector.zig");
-const Spline = @import("spline_new.zig").SplineUI(f64);
-// const Spline = @import("spline.zig");
-// const SplineRL = @import("spline_rl.zig").SplineRL(f64);
-// const Spline2D = SplineRL.Spline;
-// const Spline2D = Spline.SplineSoA(.{ .T = f64, .dim = 2 });
+const Spline = @import("spline.zig").SplineUI(f64);
 
 const palette = @import("colorscheme.zig").palette;
 
@@ -17,72 +12,6 @@ const fnames = .{
     .export_data = "konkurs-I-indeks-dane.txt",
     .export_summary = "konkurs-I-indeks-podsumowanie.txt",
 };
-
-const State = struct {
-    const SelectedPt = ?struct {
-        spline: *Spline,
-        idx: usize,
-    };
-    camera: rl.Camera2D,
-    ui_splines: struct {
-        arr: []Spline,
-        allocator: std.heap.ArenaAllocator,
-        parent_allocator: std.mem.Allocator,
-    },
-    dragged: SelectedPt = null,
-    chosen: SelectedPt = null,
-    thick: f32,
-
-    pub fn new(allocator: std.mem.Allocator) !@This() {
-        var spline_allocator = std.heap.ArenaAllocator.init(allocator);
-        return .{
-            .camera = .{
-                .zoom = 1,
-                .rotation = 0,
-                .offset = .{
-                    .x = 0,
-                    .y = 0,
-                },
-                .target = .{
-                    .x = 0,
-                    .y = 0,
-                },
-            },
-            .ui_splines = .{
-                .arr = try spline_allocator.allocator().alloc(Spline, 0),
-                .allocator = spline_allocator,
-                .parent_allocator = allocator,
-            },
-
-            .thick = 5.0,
-        };
-    }
-
-    pub fn addSpline(self: *@This(), x: f64, y: f64) !void {
-        self.ui_splines.arr = try self.ui_splines.allocator.allocator().realloc(self.ui_splines.arr, self.ui_splines.arr.len + 1);
-        self.ui_splines.arr[self.ui_splines.arr.len - 1] = try Spline.init(self.ui_splines.allocator.allocator(), &[_]f64{ 0, 1 }, &[_]Spline.Point{
-            .{ .x = x, .y = y },
-            .{ .x = x, .y = y },
-        }, &[_]usize{ 1, 1 });
-    }
-};
-
-// pub fn main() !void {
-//     var gpa = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-//     defer _ = gpa.deinit();
-//
-//     const allocator = gpa.allocator();
-//
-//     const sp = try Spline.init(allocator, &[_]f64{ 0, 1, 1, 1, 1 }, &[_]Spline.Point{
-//         .{ .x = 0, .y = 0 },
-//         .{ .x = 1, .y = 1 },
-//         .{ .x = 0, .y = 0 },
-//         .{ .x = 1, .y = 1 },
-//         .{ .x = 0, .y = 0 },
-//     }, &[_]usize{ 1, 1, 1, 1, 1 });
-//
-//     try saveSave(&[_]Spline{sp});
-// }
 
 pub fn main() !void {
     var gpa = std.heap.ArenaAllocator.init(std.heap.c_allocator);
@@ -240,7 +169,6 @@ fn loadSave(allocator: std.mem.Allocator) ![]Spline {
     var json_reader = std.json.reader(allocator, f.reader().any());
 
     const res = try std.json.parseFromTokenSource([]Spline, allocator, &json_reader, .{});
-    // defer res.deinit();
 
     return res.value;
 }
@@ -252,13 +180,56 @@ fn saveSave(sps: []const Spline) !void {
     try std.json.stringify(sps, .{ .whitespace = .indent_2 }, f.writer().any());
 }
 
-fn handleInput(state: *State) !void {
-    // if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-    //     const mousexy = rl.getMousePosition();
-    //     const xy = rl.getScreenToWorld2D(mousexy, state.camera);
-    //     try std.io.getStdOut().writer().print("[{},{}]\n", .{ xy.x, -xy.y });
-    // }
+const State = struct {
+    const SelectedPt = ?struct {
+        spline: *Spline,
+        idx: usize,
+    };
+    camera: rl.Camera2D,
+    ui_splines: struct {
+        arr: []Spline,
+        allocator: std.heap.ArenaAllocator,
+        parent_allocator: std.mem.Allocator,
+    },
+    dragged: SelectedPt = null,
+    chosen: SelectedPt = null,
+    thick: f32,
 
+    pub fn new(allocator: std.mem.Allocator) !@This() {
+        var spline_allocator = std.heap.ArenaAllocator.init(allocator);
+        return .{
+            .camera = .{
+                .zoom = 1,
+                .rotation = 0,
+                .offset = .{
+                    .x = 0,
+                    .y = 0,
+                },
+                .target = .{
+                    .x = 0,
+                    .y = 0,
+                },
+            },
+            .ui_splines = .{
+                .arr = try spline_allocator.allocator().alloc(Spline, 0),
+                .allocator = spline_allocator,
+                .parent_allocator = allocator,
+            },
+
+            .thick = 5.0,
+        };
+    }
+
+    pub fn addSpline(self: *@This(), x: f64, y: f64) !void {
+        self.ui_splines.arr = try self.ui_splines.allocator.allocator().realloc(self.ui_splines.arr, self.ui_splines.arr.len + 1);
+        self.ui_splines.arr[self.ui_splines.arr.len - 1] = try Spline.init(self.ui_splines.allocator.allocator(), &[_]f64{ 0, 1 }, &[_]Spline.Point{
+            .{ .x = x, .y = y },
+            .{ .x = x, .y = y },
+        }, &[_]usize{ 1, 1 });
+    }
+};
+
+fn handleInput(state: *State) !void {
     const mouse = rl.getScreenToWorld2D(rl.getMousePosition(), state.camera);
     for (state.ui_splines.arr) |*sp| {
         if (rl.checkCollisionPointRec(mouse, sp.collision_box(state.thick))) {
@@ -290,24 +261,6 @@ fn handleInput(state: *State) !void {
             state.dragged = null;
         }
     }
-    // const mouse = rl.getScreenToWorld2D(rl.getMousePosition(), state.camera);
-    // for (state.sp.spline.eq_params, 0..) |ep, idx| {
-    //     if (rl.checkCollisionPointCircle(mouse, .{ .x = @floatCast(ep.v[0]), .y = @floatCast(-ep.v[1]) }, 8.0)) {
-    //         if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
-    //             state.dragged_idx = idx;
-    //         }
-    //
-    //         break;
-    //     }
-    // }
-    //
-    // if (state.dragged_idx) |idx| {
-    //     state.sp.spline.eq_params[idx].v[0] = mouse.x;
-    //     state.sp.spline.eq_params[idx].v[1] = -mouse.y;
-    //     if (rl.isMouseButtonReleased(rl.MouseButton.mouse_button_left)) {
-    //         state.dragged_idx = null;
-    //     }
-    // }
 
     switch (rl.getKeyPressed()) {
         .key_l => {
