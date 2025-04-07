@@ -82,7 +82,7 @@ pub fn SplineUI(Tp: type) type {
         dts: ArrayList(T),
         pts: ArrayList(Point),
         gran_us: ArrayList(usize),
-        dynamic: Dynamic,
+        dynamic: ?Dynamic,
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator, dts: []const T, pts: []const Point, gran_us: []const usize) !Self {
@@ -107,7 +107,7 @@ pub fn SplineUI(Tp: type) type {
                 .gran_us = s_gran_us,
                 .allocator = allocator,
 
-                .dynamic = undefined,
+                .dynamic = null,
             };
 
             try result.recalc();
@@ -117,8 +117,8 @@ pub fn SplineUI(Tp: type) type {
 
         pub fn drawSpline2Dpts(self: Self, thick: f32, chosen_idx: ?usize) void {
             const logger = std.log.scoped(.drawSpline2Dpts);
-            for (self.dynamic.spline.ts, 0..) |t, idx| {
-                if (self.dynamic.spline.at(t)) |res| {
+            for (self.dynamic.?.spline.ts, 0..) |t, idx| {
+                if (self.dynamic.?.spline.at(t)) |res| {
                     const xy: rl.Vector2 = .{
                         .x = @floatCast(res.x),
                         .y = @floatCast(-res.y),
@@ -151,7 +151,7 @@ pub fn SplineUI(Tp: type) type {
             var prev: rl.Vector2 = undefined;
             var first = true;
             for (self.gran_us.items, 0..) |gus, i| {
-                const t = self.dynamic.spline.ts[i];
+                const t = self.dynamic.?.spline.ts[i];
                 const dt = self.dts.items[i];
 
                 var iterator = uniformSpacingIterator(T).iterate(0, dt, gus);
@@ -159,7 +159,7 @@ pub fn SplineUI(Tp: type) type {
                 while (iterator.next()) |du| {
                     const u = t + du;
 
-                    if (self.dynamic.spline.at(u)) |res| {
+                    if (self.dynamic.?.spline.at(u)) |res| {
                         const xy: rl.Vector2 = .{
                             .x = @floatCast(res.x),
                             .y = @floatCast(ysc * res.y),
@@ -182,10 +182,10 @@ pub fn SplineUI(Tp: type) type {
 
         pub fn collision_box(self: Self, thick: f32) rl.Rectangle {
             return rl.Rectangle{
-                .x = self.dynamic.bbox.x - thick / 2,
-                .y = -self.dynamic.bbox.y - self.dynamic.bbox.height - thick / 2,
-                .width = self.dynamic.bbox.width + thick,
-                .height = self.dynamic.bbox.height + thick,
+                .x = self.dynamic.?.bbox.x - thick / 2,
+                .y = -self.dynamic.?.bbox.y - self.dynamic.?.bbox.height - thick / 2,
+                .width = self.dynamic.?.bbox.width + thick,
+                .height = self.dynamic.?.bbox.height + thick,
             };
         }
 
@@ -292,7 +292,7 @@ pub fn SplineUI(Tp: type) type {
         }
 
         pub fn savePwoCompat(self: Self, writer: std.io.AnyWriter) !void {
-            try self.dynamic.spline.savePwoCompat(writer);
+            try self.dynamic.?.spline.savePwoCompat(writer);
             {
                 try writer.writeAll("[");
                 var len: usize = 0;
@@ -305,7 +305,7 @@ pub fn SplineUI(Tp: type) type {
 
                 var j: usize = 0;
                 for (self.gran_us.items, 0..) |gus, i| {
-                    const t = self.dynamic.spline.ts[i];
+                    const t = self.dynamic.?.spline.ts[i];
                     const dt = self.dts.items[i];
 
                     var iterator = uniformSpacingIterator(T).iterate(0, dt, gus);
@@ -464,7 +464,9 @@ pub fn SplineUI(Tp: type) type {
                 };
             }
 
-            self.dynamic.spline.deinit();
+            if (self.dynamic) |old| {
+                old.spline.deinit();
+            }
             self.dynamic = res;
         }
 

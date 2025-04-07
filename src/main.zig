@@ -32,6 +32,39 @@ const State = struct {
     dragged: SelectedPt = null,
     chosen: SelectedPt = null,
     thick: f32,
+
+    pub fn new(allocator: std.mem.Allocator) !@This() {
+        var spline_allocator = std.heap.ArenaAllocator.init(allocator);
+        return .{
+            .camera = .{
+                .zoom = 1,
+                .rotation = 0,
+                .offset = .{
+                    .x = 0,
+                    .y = 0,
+                },
+                .target = .{
+                    .x = 0,
+                    .y = 0,
+                },
+            },
+            .ui_splines = .{
+                .arr = try spline_allocator.allocator().alloc(Spline, 0),
+                .allocator = spline_allocator,
+                .parent_allocator = allocator,
+            },
+
+            .thick = 5.0,
+        };
+    }
+
+    pub fn addSpline(self: *@This(), x: f64, y: f64) !void {
+        self.ui_splines.arr = try self.ui_splines.allocator.allocator().realloc(self.ui_splines.arr, self.ui_splines.arr.len + 1);
+        self.ui_splines.arr[self.ui_splines.arr.len - 1] = try Spline.init(self.ui_splines.allocator.allocator(), &[_]f64{ 0, 1 }, &[_]Spline.Point{
+            .{ .x = x, .y = y },
+            .{ .x = x, .y = y },
+        }, &[_]usize{ 1, 1 });
+    }
 };
 
 // pub fn main() !void {
@@ -75,27 +108,21 @@ pub fn main() !void {
     const pwo_tex = rl.loadTextureFromImage(pwo);
     defer rl.unloadTexture(pwo_tex);
 
-    var state: State = .{
-        .camera = .{
-            .zoom = 1,
-            .offset = .{
-                .x = @floatFromInt(@divTrunc(sw, 2)),
-                .y = @floatFromInt(@divTrunc(sh, 2)),
-            },
-            .target = .{
-                .x = @floatFromInt(@divTrunc(pwo_tex.width, 2)),
-                .y = @floatFromInt(@divTrunc(-pwo_tex.height, 2)),
-            },
-            .rotation = 0,
-        },
-        .ui_splines = .{
-            .arr = try loadSave(allocator),
-            .allocator = std.heap.ArenaAllocator.init(allocator),
-            .parent_allocator = allocator,
-        },
-
-        .thick = 5.0,
+    var state: State = try State.new(allocator);
+    state.camera.offset = .{
+        .x = @floatFromInt(@divTrunc(sw, 2)),
+        .y = @floatFromInt(@divTrunc(sh, 2)),
     };
+    state.camera.target = .{
+        .x = @floatFromInt(@divTrunc(pwo_tex.width, 2)),
+        .y = @floatFromInt(@divTrunc(-pwo_tex.height, 2)),
+    };
+    const save_splines = loadSave(allocator);
+    if (save_splines) |val| {
+        state.ui_splines.arr = val;
+    } else |err| {
+        std.log.scoped(.main).warn("Failed loading save: {}", .{err});
+    }
 
     rg.guiSetStyle(.default, @intFromEnum(rg.GuiDefaultProperty.text_size), 20);
     rl.setExitKey(rl.KeyboardKey.key_q);
@@ -320,6 +347,9 @@ fn handleInput(state: *State) !void {
                 try Spline.savePwoCompatSplinesSummary(state.ui_splines.arr, f.writer().any());
             }
         },
+        .key_n => {
+            try state.addSpline(mouse.x, -mouse.y);
+        },
         .key_right => state.camera.target.x += 10.0 / state.camera.zoom,
         .key_left => state.camera.target.x -= 10.0 / state.camera.zoom,
         .key_up => state.camera.target.y -= 10.0 / state.camera.zoom,
@@ -370,9 +400,9 @@ fn handleInput(state: *State) !void {
     if (wheel != 0) {
         const scaleFactor =
             if (wheel > 0)
-            1.0 + (0.25 * @abs(wheel))
-        else
-            1.0 / (1.0 + (0.25 * @abs(wheel)));
+                1.0 + (0.25 * @abs(wheel))
+            else
+                1.0 / (1.0 + (0.25 * @abs(wheel)));
 
         state.camera.target = rl.getScreenToWorld2D(rl.getMousePosition(), state.camera);
         state.camera.offset = rl.getMousePosition();
