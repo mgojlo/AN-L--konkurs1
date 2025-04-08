@@ -123,7 +123,7 @@ pub fn SplineUI(Tp: type) type {
             return result;
         }
 
-        pub fn drawSpline2Dpts(self: Self, thick: f32, chosen_idx: ?usize) void {
+        pub fn drawSpline2Dpts(self: Self, thick: f32, chosen_idx: ?usize) !void {
             const logger = std.log.scoped(.drawSpline2Dpts);
             for (self.dynamic.?.spline.ts, 0..) |t, idx| {
                 if (self.dynamic.?.spline.at(t)) |res| {
@@ -137,7 +137,7 @@ pub fn SplineUI(Tp: type) type {
                         const text = std.fmt.allocPrintZ(self.allocator, "{}", .{idx});
                         if (text) |val| {
                             defer self.allocator.free(val);
-                            rl.drawTextEx(rl.getFontDefault(), val, xy, 1, 1, rl.Color.pink);
+                            rl.drawTextEx(try rl.getFontDefault(), val, xy, 1, 1, rl.Color.pink);
                         } else |err| {
                             switch (err) {
                                 else => {

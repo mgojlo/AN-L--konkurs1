@@ -35,15 +35,15 @@ pub fn main() !void {
         .msaa_4x_hint = true,
         .vsync_hint = true,
     });
-    rl.setTraceLogLevel(.log_warning);
+    rl.setTraceLogLevel(.warning);
     rl.initWindow(sw, sh, "Konkurs1");
     defer rl.closeWindow();
 
-    var pwo = rl.loadImage("pwo++.png");
+    var pwo = try rl.loadImage("pwo++.png");
     pwo = pwo;
     defer rl.unloadImage(pwo);
 
-    const pwo_tex = rl.loadTextureFromImage(pwo);
+    const pwo_tex = try rl.loadTextureFromImage(pwo);
     defer rl.unloadTexture(pwo_tex);
 
     var state: State = try State.new(allocator);
@@ -62,13 +62,13 @@ pub fn main() !void {
         std.log.scoped(.main).warn("Failed loading save: {}", .{err});
     }
 
-    rg.guiSetStyle(.default, @intFromEnum(rg.GuiDefaultProperty.text_size), 20);
-    rl.setExitKey(rl.KeyboardKey.key_q);
+    rg.guiSetStyle(.default, rg.GuiDefaultProperty.text_size, 20);
+    rl.setExitKey(rl.KeyboardKey.q);
 
     while (!rl.windowShouldClose()) {
         try handleInput(&state);
 
-        if (rl.isKeyPressed(rl.KeyboardKey.key_e)) {
+        if (rl.isKeyPressed(rl.KeyboardKey.e)) {
             try exportImage(state.ui_splines.arr, @intCast(pwo_tex.width), @intCast(pwo_tex.height), state.thick, fnames.export_image);
         }
 
@@ -106,12 +106,12 @@ pub fn main() !void {
                 sp.drawSpline2D(1, rl.Color.black, true);
                 if (state.chosen) |chosen| {
                     if (chosen.spline == sp) {
-                        sp.drawSpline2Dpts(1, chosen.idx);
+                        try sp.drawSpline2Dpts(1, chosen.idx);
                     } else {
-                        sp.drawSpline2Dpts(1, null);
+                        try sp.drawSpline2Dpts(1, null);
                     }
                 } else {
-                    sp.drawSpline2Dpts(1, null);
+                    try sp.drawSpline2Dpts(1, null);
                 }
                 rl.drawRectangleRec(sp.collision_box(state.thick), rl.Color.black.fade(0.2));
             }
@@ -149,7 +149,7 @@ pub fn main() !void {
 }
 
 fn exportImage(splines: []const Spline, width: usize, height: usize, thick: f32, name: [:0]const u8) !void {
-    const rtex = rl.loadRenderTexture(@intCast(width), @intCast(height));
+    const rtex = try rl.loadRenderTexture(@intCast(width), @intCast(height));
     defer rl.unloadRenderTexture(rtex);
 
     {
@@ -163,12 +163,14 @@ fn exportImage(splines: []const Spline, width: usize, height: usize, thick: f32,
         }
     }
 
-    std.debug.print("{},{}\n", .{ rtex.texture.width, rtex.texture.height });
+    std.log.scoped(.exportImage).info("Exporting image to {s}. Image size: {}x{}", .{ name, rtex.texture.width, rtex.texture.height });
 
-    var img = rl.loadImageFromTexture(rtex.texture);
+    var img = try rl.loadImageFromTexture(rtex.texture);
     defer rl.unloadImage(img);
 
-    _ = img.exportToFile(name.ptr);
+    if (!img.exportToFile(name)) {
+        std.log.scoped(.exportImage).warn("Failed to export image to {s}", .{name});
+    }
 }
 
 fn loadSave(allocator: std.mem.Allocator) ![]Spline {
@@ -250,9 +252,9 @@ fn handleInput(state: *State) !void {
             for (sp.pts.items, 0..) |pt, idx| {
                 if (rl.checkCollisionPointCircle(mouse, pt.toRlVector2().multiply(.{ .x = 1, .y = -1 }), @sqrt(8.0 / state.camera.zoom))) {
                     if (state.dragged == null) {
-                        if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_left)) {
+                        if (rl.isMouseButtonDown(rl.MouseButton.left)) {
                             state.dragged = .{ .spline = sp, .idx = idx };
-                        } else if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_right)) {
+                        } else if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
                             state.chosen = .{ .spline = sp, .idx = idx };
                         }
                     }
@@ -263,21 +265,21 @@ fn handleInput(state: *State) !void {
     }
 
     if (state.dragged) |dragged| {
-        if (rl.isKeyDown(rl.KeyboardKey.key_m)) {
+        if (rl.isKeyDown(rl.KeyboardKey.m)) {
             var dd = rl.getMouseDelta();
             dd.y = -dd.y;
             try dragged.spline.translate(Spline.Point.fromRlVector2(dd));
         } else {
             try dragged.spline.setPt(dragged.idx, Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })));
         }
-        if (rl.isMouseButtonReleased(rl.MouseButton.mouse_button_left)) {
+        if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
             state.chosen = state.dragged;
             state.dragged = null;
         }
     }
 
     switch (rl.getKeyPressed()) {
-        .key_l => {
+        .l => {
             std.log.info("Reloading save", .{});
             state.dragged = null;
             state.chosen = null;
@@ -299,8 +301,8 @@ fn handleInput(state: *State) !void {
                 std.log.scoped(.handleInput).warn("Failed loading save: {}", .{err});
             }
         },
-        .key_s => try saveSave(state.ui_splines.arr),
-        .key_e => {
+        .s => try saveSave(state.ui_splines.arr),
+        .e => {
             {
                 var f = try std.fs.cwd().createFile(fnames.export_data, .{});
                 defer f.close();
@@ -314,47 +316,47 @@ fn handleInput(state: *State) !void {
                 try Spline.savePwoCompatSplinesSummary(state.ui_splines.arr, f.writer().any());
             }
         },
-        .key_n => {
+        .n => {
             const mouse_wiggle = rl.getScreenToWorld2D(rl.getMousePosition().add(.{ .x = 1, .y = 1 }), state.camera);
             try state.addSpline(Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })), Spline.Point.fromRlVector2(mouse_wiggle.multiply(.{ .x = 1, .y = -1 })));
         },
-        .key_right => state.camera.target.x += 10.0 / state.camera.zoom,
-        .key_left => state.camera.target.x -= 10.0 / state.camera.zoom,
-        .key_up => state.camera.target.y -= 10.0 / state.camera.zoom,
-        .key_down => state.camera.target.y += 10.0 / state.camera.zoom,
-        .key_equal => {
+        .right => state.camera.target.x += 10.0 / state.camera.zoom,
+        .left => state.camera.target.x -= 10.0 / state.camera.zoom,
+        .up => state.camera.target.y -= 10.0 / state.camera.zoom,
+        .down => state.camera.target.y += 10.0 / state.camera.zoom,
+        .equal => {
             state.thick += 0.1;
         },
-        .key_minus => {
+        .minus => {
             state.thick -= 0.1;
             if (state.thick <= 0) {
                 state.thick = 0.1;
             }
         },
-        .key_escape => {
+        .escape => {
             state.chosen = null;
             state.dragged = null;
         },
-        .key_r => if (state.chosen) |chosen| {
+        .r => if (state.chosen) |chosen| {
             try chosen.spline.setDt(chosen.idx, 1);
         },
-        .key_a => if (state.chosen) |chosen| {
+        .a => if (state.chosen) |chosen| {
             try chosen.spline.addPoint(chosen.idx, Spline.Point.fromRlVector2(mouse.multiply(.{ .x = 1, .y = -1 })));
         },
-        .key_d => if (state.chosen) |chosen| {
+        .d => if (state.chosen) |chosen| {
             try chosen.spline.delPoint(chosen.idx);
             state.chosen = null;
         },
-        // .key_t => if (state.chosen) |chosen| {
-        //     const dir: Spline.T = if (rl.isKeyDown(rl.KeyboardKey.key_left_shift)) 0.5 else 2;
+        // .t => if (state.chosen) |chosen| {
+        //     const dir: Spline.T = if (rl.isKeyDown(rl.KeyboardKey.left_shift)) 0.5 else 2;
         //     const new_dt = @max(std.math.floatTrueMin(Spline.T), chosen.spline.getDt(chosen.idx) * dir);
         //     try chosen.spline.setDt(chosen.idx, new_dt);
         //     std.debug.print("new dt: {}\n", .{chosen.spline.getDt(chosen.idx)});
         // },
-        .key_g => if (state.chosen) |chosen| {
+        .g => if (state.chosen) |chosen| {
             const cur = chosen.spline.getGran(chosen.idx);
-            const amt = if (rl.isKeyDown(rl.KeyboardKey.key_left_control)) @divTrunc(cur, 2) else 1;
-            if (rl.isKeyDown(rl.KeyboardKey.key_left_shift)) {
+            const amt = if (rl.isKeyDown(rl.KeyboardKey.left_control)) @divTrunc(cur, 2) else 1;
+            if (rl.isKeyDown(rl.KeyboardKey.left_shift)) {
                 try chosen.spline.setGran(chosen.idx, cur -| amt);
             } else {
                 try chosen.spline.setGran(chosen.idx, cur +| amt);
@@ -381,7 +383,7 @@ fn handleInput(state: *State) !void {
         }
     }
 
-    if (rl.isMouseButtonDown(rl.MouseButton.mouse_button_middle) or rl.isKeyDown(rl.KeyboardKey.key_space)) {
+    if (rl.isMouseButtonDown(rl.MouseButton.middle) or rl.isKeyDown(rl.KeyboardKey.space)) {
         const delta = rl.getMouseDelta().scale(-1.0 / state.camera.zoom);
         state.camera.target = state.camera.target.add(delta);
     }

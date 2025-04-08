@@ -1,5 +1,5 @@
 const std = @import("std");
-const rlz = @import("raylib-zig");
+const rlz = @import("raylib_zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const raylib_dep = b.dependency("raylib-zig", .{
+    const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = .ReleaseFast,
         .linux_display_backend = .Both,

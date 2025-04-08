@@ -11,7 +11,7 @@
     flake-utils,
     ...
   } @ inputs: let
-    zig-version = "0.13.0";
+    zig-version = "0.14.0";
   in
     flake-utils.lib.eachDefaultSystem (
       system: let
